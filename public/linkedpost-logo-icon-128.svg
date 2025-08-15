@@ -1,0 +1,7 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LinkedPost icon">
+  <rect width="128" height="128" rx="24" fill="#111827"/>
+  <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
+        font-size="60" font-family="Inter, Arial, sans-serif" fill="#FFFFFF" letter-spacing="2">
+    LP
+  </text>
+</svg>

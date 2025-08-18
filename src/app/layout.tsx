@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="mx-auto max-w-4xl px-4 py-3 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
               <img src="/linkedpost-logo-wordmark-512x128.svg" alt="LinkedPost logo" className="h-8" />
-              <span className="font-semibold">LinkedIn Post Generator</span>
+              <span className="font-semibold text-gray-800">LinkedIn Post Generator</span>
             </Link>
             <nav className="flex items-center gap-5 text-sm">
               <Link href="/privacy" className="hover:underline">Privacy</Link>

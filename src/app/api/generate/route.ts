@@ -52,11 +52,11 @@ Write a LinkedIn post for my personal profile.`;
     const clipped = text.length > LI_MAX ? text.slice(0, LI_MAX - 1) : text;
 
     return NextResponse.json({ post: clipped });
-  } catch (err: any) {
-    console.error("Generate error:", err);
-    return NextResponse.json(
-      { error: err?.message || "Failed to generate" },
-      { status: 500 }
-    );
-    }
+ } catch (err: unknown) {
+  console.error("Generate error:", err);
+  const message =
+    err instanceof Error ? err.message : "Failed to generate";
+  return NextResponse.json({ error: message }, { status: 500 });
+}
+
 }

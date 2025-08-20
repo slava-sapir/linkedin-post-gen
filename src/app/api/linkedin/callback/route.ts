@@ -1,87 +1,60 @@
-// src/app/api/linkedin/callback/route.ts
-export const runtime = "nodejs";
-
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-function abs(url: string, req: Request) {
-  const origin = new URL(req.url).origin;
-  return new URL(url, origin);
+function abs(path: string, req: NextRequest) {
+  const proto = req.headers.get("x-forwarded-proto") ?? "http";
+  const host = req.headers.get("host");
+  return `${proto}://${host}${path}`;
 }
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-
   const cookieStore = await cookies();
   const savedState = cookieStore.get("li_oauth_state")?.value;
 
-  // Absolute redirect + clear stale state
   if (!code || !state || state !== savedState) {
-    const resp = NextResponse.redirect(abs("/?li=error_state", req));
-    resp.cookies.set("li_oauth_state", "", { path: "/", maxAge: 0 });
-    return resp;
+    return NextResponse.redirect(abs("/?li=error_state", req));
   }
 
-  // Exchange code -> token
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
-    redirect_uri: process.env.LINKEDIN_REDIRECT_URI || "",
-    client_id: process.env.LINKEDIN_CLIENT_ID || "",
-    client_secret: process.env.LINKEDIN_CLIENT_SECRET || "",
+    redirect_uri: process.env.LINKEDIN_REDIRECT_URI ?? "",
+    client_id: process.env.LINKEDIN_CLIENT_ID ?? "",
+    client_secret: process.env.LINKEDIN_CLIENT_SECRET ?? "",
   });
 
   const tokenRes = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
+    body: body.toString(),
   });
 
   if (!tokenRes.ok) {
-    const resp = NextResponse.redirect(abs("/?li=error_token", req));
-    resp.cookies.set("li_oauth_state", "", { path: "/", maxAge: 0 });
-    return resp;
+    return NextResponse.redirect(abs("/?li=error_token", req));
   }
 
-  const tokenJson = await tokenRes.json();
-  const accessToken = tokenJson.access_token as string;
-  const expiresIn = (tokenJson.expires_in as number) || 3600; // seconds
+  const tokenData: { access_token: string } = await tokenRes.json();
+  const accessToken = tokenData.access_token;
 
-  // OIDC: get user info → 'sub' is the member ID
+  // Fetch user info via OpenID Connect
   const userinfoRes = await fetch("https://api.linkedin.com/v2/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
   if (!userinfoRes.ok) {
-    const resp = NextResponse.redirect(abs("/?li=error_me", req));
-    resp.cookies.set("li_oauth_state", "", { path: "/", maxAge: 0 });
-    return resp;
+    return NextResponse.redirect(abs("/?li=error_me", req));
   }
 
-  const userinfo = await userinfoRes.json();
-  const personId = userinfo.sub as string; // OIDC subject (member id)
+  const userinfo: { sub: string } = await userinfoRes.json();
+  const personId = userinfo.sub;
   const authorUrn = `urn:li:person:${personId}`;
 
-  // Store tokens in httpOnly cookies (demo only; use DB/session for prod)
-  const resp = NextResponse.redirect(abs("/?li=ok", req));
-  resp.cookies.set("li_access_token", accessToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false, // true in production
-    path: "/",
-    maxAge: Math.max(60, expiresIn - 60),
-  });
-  resp.cookies.set("li_author_urn", authorUrn, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: false,
-    path: "/",
-    maxAge: Math.max(60, expiresIn - 60),
-  });
-
-  // Clear one-time state cookie
-  resp.cookies.set("li_oauth_state", "", { path: "/", maxAge: 0 });
-  return resp;
+  const res = NextResponse.redirect(abs("/", req));
+  res.cookies.set("li_access_token", accessToken, { path: "/" });
+  res.cookies.set("li_author_urn", authorUrn, { path: "/" });
+  res.cookies.set("li_oauth_state", "", { path: "/", maxAge: 0 });
+  return res;
 }

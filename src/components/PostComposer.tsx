@@ -13,6 +13,22 @@ export default function PostComposer() {
   const [liReady, setLiReady] = useState(false);
   const [loading, setLoading] = useState<"gen" | "post" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    // Check if already logged in
+    fetch("/api/linkedin/me")
+      .then(res => res.json())
+      .then(data => setAuthed(data.authenticated))
+      .catch(() => setAuthed(false));
+  }, []);
+
+// Redirect user to LinkedIn auth route
+  const handleLinkedInLogin = () => {
+    window.location.href = "/api/linkedin/auth";
+  };
+
+
 
   // Load any saved draft from localStorage
   useEffect(() => {
@@ -100,9 +116,10 @@ export default function PostComposer() {
 
       const data = await res.json();
       setPost(data.post || "");
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to generate";
       setPost("");
-      setError(e?.message || "Failed to generate");
+      setError(message);
     } finally {
       setLoading(null);
     }
@@ -128,8 +145,9 @@ export default function PostComposer() {
         throw new Error(data?.error || data?.message || "LinkedIn post failed");
       }
       alert("Posted to LinkedIn! Check your feed.");
-    } catch (e: any) {
-      setError(e?.message || "Failed to post to LinkedIn");
+   } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to post to LinkedIn";
+      setError(message);
     } finally {
       setLoading(null);
     }
@@ -170,25 +188,26 @@ export default function PostComposer() {
             {loading === "gen" ? "Generating…" : "Generate with AI"}
           </button>
 
-          {!liReady ? (
-            <button
-              onClick={loginLinkedIn}
-              className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
-              title="Authenticate with LinkedIn to enable posting"
-            >
-              Login with LinkedIn
-            </button>
-          ) : (
-            <button
-              onClick={postToLinkedIn}
-              disabled={!post || overLimit || loading === "post"}
-              className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800 disabled:opacity-40"
-              title="Publish this text to your LinkedIn feed"
-            >
-              {loading === "post" ? "Posting…" : "Post to LinkedIn"}
-            </button>
-          )}
-
+        {authed ? (
+          <button
+            onClick={postToLinkedIn}
+            disabled={!post || overLimit || loading === "post"}
+            className="rounded-xl border px-4 py-2 text-gray-800 
+                      hover:bg-black hover:text-white 
+                      disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-800"
+            title="Publish this text to your LinkedIn feed"
+          >
+            {loading === "post" ? "Posting…" : "Post to LinkedIn"}
+          </button>
+        ) : (
+          <button
+            onClick={handleLinkedInLogin}
+            className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-black hover:text-white"
+            title="Authenticate with LinkedIn to enable posting"
+          >
+            Login with LinkedIn
+          </button>
+        )}
           <button
             onClick={onSaveDraft}
             className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
@@ -212,7 +231,7 @@ export default function PostComposer() {
           <button
             onClick={onCopy}
             disabled={!post}
-            className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
+            className="rounded-xl border px-4 py-2 hover:bg-black hover:text-white text-gray-800"
           >
             {copied ? "Copied!" : "Copy"}
           </button>

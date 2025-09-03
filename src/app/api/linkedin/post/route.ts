@@ -1,44 +1,62 @@
-import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { prisma } from "@/lib/prisma";
+import { NextResponse } from "next/server";
 
-interface PostBody {
-  text: string;
-}
+export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
 
-export async function POST(req: NextRequest) {
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get("li_access_token")?.value;
-  const authorUrn = cookieStore.get("li_author_urn")?.value;
-
-  if (!accessToken || !authorUrn) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body: PostBody = await req.json();
+  // Get the logged-in user + LinkedIn account
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+    include: { accounts: true },
+  });
 
-  const postRes = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const liAccount = user.accounts.find((a) => a.provider === "linkedin");
+
+  if (!liAccount?.access_token) {
+    return NextResponse.json(
+      { error: "No LinkedIn access token found" },
+      { status: 400 }
+    );
+  }
+
+  const { text } = await req.json();
+
+  // Make request to LinkedIn UGC API with access_token
+  const response = await fetch("https://api.linkedin.com/v2/ugcPosts", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "X-Restli-Protocol-Version": "2.0.0",
+      Authorization: `Bearer ${liAccount.access_token}`,
       "Content-Type": "application/json",
+      "X-Restli-Protocol-Version": "2.0.0",
     },
     body: JSON.stringify({
-      author: authorUrn,
+      author: `urn:li:person:${liAccount.providerAccountId}`,
       lifecycleState: "PUBLISHED",
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
-          shareCommentary: { text: body.text },
+          shareCommentary: { text },
           shareMediaCategory: "NONE",
         },
       },
-      visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+      visibility: {
+        "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+      },
     }),
   });
 
-  if (!postRes.ok) {
-    const err = await postRes.text();
-    return NextResponse.json({ error: err }, { status: 500 });
+  if (!response.ok) {
+    const error = await response.json();
+    return NextResponse.json({ error }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

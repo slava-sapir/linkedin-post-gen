@@ -1,4 +1,3 @@
-// src/app/api/generate/route.ts
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
@@ -8,55 +7,37 @@ const openai = new OpenAI({
 
 export async function POST(req: Request) {
   try {
-    const { title, prompt } = await req.json();
+    const { topic } = await req.json();
 
-    // Guard
-    if (!openai.apiKey) {
+    if (!topic || typeof topic !== "string") {
       return NextResponse.json(
-        { error: "Missing OPENAI_API_KEY" },
-        { status: 500 }
+        { error: "Missing or invalid topic" },
+        { status: 400 }
       );
     }
 
-    const system = `You are a professional LinkedIn copywriter. 
-- Write in a clear, helpful, human tone (no fluff).
-- Keep it 100–220 words by default.
-- Use 1–2 tasteful emojis max.
-- Add 3–5 relevant hashtags on the last line.
-- Prefer short paragraphs and bullets.
-- Avoid cliched hooks, avoid over-selling.
-- If a title is provided, use it as the post’s theme (not a heading).`;
+    const prompt = `Write a concise, engaging LinkedIn post about: ${topic}. 
+Keep it professional but friendly, suitable for a LinkedIn audience.`;
 
-    const user = `Title: ${title || "(none)"} 
-Notes/Prompt: ${prompt || "(none)"}
-
-Write a LinkedIn post for my personal profile.`;
-
-    // You can switch models later; this is a cost‑effective default.
-    const completion = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.7,
       messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
+        { role: "system", content: "You are a professional LinkedIn post generator." },
+        { role: "user", content: prompt },
       ],
-      max_tokens: 600,
+      max_tokens: 200,
     });
 
     const text =
-      completion.choices?.[0]?.message?.content?.trim() ||
-      "Sorry, I couldn’t generate text.";
+      response.choices[0]?.message?.content?.trim() ??
+      "Could not generate post.";
 
-    // Basic safety: LinkedIn cap ~3000 chars
-    const LI_MAX = 3000;
-    const clipped = text.length > LI_MAX ? text.slice(0, LI_MAX - 1) : text;
-
-    return NextResponse.json({ post: clipped });
- } catch (err: unknown) {
-  console.error("Generate error:", err);
-  const message =
-    err instanceof Error ? err.message : "Failed to generate";
-  return NextResponse.json({ error: message }, { status: 500 });
-}
-
+    return NextResponse.json({ text });
+  } catch (err) {
+    console.error("AI generation error:", err);
+    return NextResponse.json(
+      { error: "Failed to generate post" },
+      { status: 500 }
+    );
+  }
 }

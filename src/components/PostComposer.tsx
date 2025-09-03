@@ -1,139 +1,55 @@
-// src/components/PostComposer.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { signOut } from "next-auth/react";
 
-const LI_MAX = 3000;
+interface LinkedInProfileResponse {
+  id: string;
+  localizedFirstName: string;
+  localizedLastName: string;
+}
+
+interface MeResponse {
+  authenticated: boolean;
+  profile?: LinkedInProfileResponse;
+}
 
 export default function PostComposer() {
-  const [title, setTitle] = useState("");
-  const [prompt, setPrompt] = useState("");
   const [post, setPost] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [liReady, setLiReady] = useState(false);
-  const [loading, setLoading] = useState<"gen" | "post" | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [authed, setAuthed] = useState(false);
+  const [profile, setProfile] = useState<LinkedInProfileResponse | null>(null);
+  const [loading, setLoading] = useState<
+    "idle" | "check" | "post" | "generate"
+  >("idle");
 
+  // ✅ Check LinkedIn authentication on mount
   useEffect(() => {
-    // Check if already logged in
-    fetch("/api/linkedin/me")
-      .then(res => res.json())
-      .then(data => setAuthed(data.authenticated))
-      .catch(() => setAuthed(false));
+    const checkAuth = async () => {
+      setLoading("check");
+      try {
+        const res = await fetch("/api/linkedin/me");
+        const data: MeResponse = await res.json();
+        console.log("LinkedIn auth check:", data);
+        setAuthed(data.authenticated);
+        setProfile(data.profile ?? null);
+      } catch (err) {
+        console.error("Error checking LinkedIn auth:", err);
+        setAuthed(false);
+        setProfile(null);
+      } finally {
+        setLoading("idle");
+      }
+    };
+    checkAuth();
   }, []);
 
-// Redirect user to LinkedIn auth route
   const handleLinkedInLogin = () => {
-    window.location.href = "/api/linkedin/auth";
+    window.location.href = "/api/auth/signin?callbackUrl=/";
   };
 
-
-
-  // Load any saved draft from localStorage
-  useEffect(() => {
+  const postToLinkedIn = async () => {
+    setLoading("post");
     try {
-      const saved = localStorage.getItem("draft");
-      if (saved) {
-        const { title, prompt, post } = JSON.parse(saved);
-        if (typeof title === "string") setTitle(title);
-        if (typeof prompt === "string") setPrompt(prompt);
-        if (typeof post === "string") setPost(post);
-      }
-    } catch {}
-  }, []);
-
-  // Detect LinkedIn auth return (?li=ok) and clean the URL
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      const status = url.searchParams.get("li");
-      if (status === "ok") setLiReady(true);
-      if (status) {
-        url.searchParams.delete("li");
-        window.history.replaceState({}, "", url.toString());
-      }
-    }
-  }, []);
-
-  const count = useMemo(() => post.length, [post]);
-  const overLimit = count > LI_MAX;
-
-  function onClear() {
-    setTitle("");
-    setPrompt("");
-    setPost("");
-    setError(null);
-  }
-
-  function onSaveDraft() {
-    localStorage.setItem("draft", JSON.stringify({ title, prompt, post }));
-  }
-
-  function onLoadDraft() {
-    const saved = localStorage.getItem("draft");
-    if (!saved) return;
-    try {
-      const { title, prompt, post } = JSON.parse(saved);
-      setTitle(title || "");
-      setPrompt(prompt || "");
-      setPost(post || "");
-    } catch {}
-  }
-
-  function onDeleteDraft() {
-    localStorage.removeItem("draft");
-  }
-
-  async function onCopy() {
-    await navigator.clipboard.writeText(post);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
-  async function onGenerate() {
-    try {
-      setLoading("gen");
-      setError(null);
-      setPost("Generating…");
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, prompt }),
-      });
-
-      const ct = res.headers.get("content-type") || "";
-      if (!res.ok) {
-        if (ct.includes("application/json")) {
-          const data = await res.json();
-          throw new Error(data?.error || `HTTP ${res.status}`);
-        } else {
-          const text = await res.text(); // HTML error page
-          console.error("Server non-JSON:", text.slice(0, 200));
-          throw new Error(`Server returned non‑JSON (status ${res.status}).`);
-        }
-      }
-
-      const data = await res.json();
-      setPost(data.post || "");
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to generate";
-      setPost("");
-      setError(message);
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  function loginLinkedIn() {
-    window.location.href = "/api/linkedin/auth";
-  }
-
-  async function postToLinkedIn() {
-    if (!post) return;
-    try {
-      setLoading("post");
-      setError(null);
       const res = await fetch("/api/linkedin/post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -141,142 +57,90 @@ export default function PostComposer() {
       });
       const data = await res.json();
       if (!res.ok) {
-        // surface LinkedIn’s message if present
-        throw new Error(data?.error || data?.message || "LinkedIn post failed");
+        throw new Error(data.error || "Failed to post");
       }
-      alert("Posted to LinkedIn! Check your feed.");
-   } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Failed to post to LinkedIn";
-      setError(message);
+      alert("✅ Posted to LinkedIn!");
+      setPost("");
+    } catch (err) {
+      console.error("Error posting to LinkedIn:", err);
+      alert("❌ Failed to post");
     } finally {
-      setLoading(null);
+      setLoading("idle");
     }
-  }
+  };
+
+  const generateWithAI = async () => {
+    setLoading("generate");
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: post || "Write a professional LinkedIn post",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to generate");
+      setPost(data.text);
+    } catch (err) {
+      console.error("Error generating post:", err);
+      alert("❌ AI generation failed");
+    } finally {
+      setLoading("idle");
+    }
+  };
 
   return (
-    <div className="grid gap-6">
-      <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Compose</h2>
+    <div className="space-y-4">
+      <textarea
+        value={post}
+        onChange={(e) => setPost(e.target.value)}
+        className="w-full border rounded p-2"
+        placeholder="Write something to post on LinkedIn..."
+      />
 
-        <label className="mb-2 block text-sm font-medium text-gray-900">
-          Title (optional)
-        </label>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g., 3 ways AI speeds up web dev"
-          className="mb-4 w-full rounded-lg border px-3 py-2 outline-none focus:ring text-gray-800"
-        />
-
-        <label className="mb-2 block text-sm font-medium text-gray-900">
-          Prompt / Notes
-        </label>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Write 100–200 words sharing 3 actionable tips…"
-          rows={6}
-          className="mb-4 w-full resize-y rounded-lg border px-3 py-2 outline-none focus:ring text-gray-800"
-        />
-
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={onGenerate}
-            disabled={loading === "gen"}
-            className="rounded-xl bg-black px-4 py-2 text-white enabled:hover:opacity-90 disabled:opacity-40"
-          >
-            {loading === "gen" ? "Generating…" : "Generate with AI"}
-          </button>
+      <div className="flex gap-3 flex-wrap">
+        <button
+          onClick={generateWithAI}
+          disabled={loading === "generate"}
+          className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-gray-100 disabled:opacity-40"
+        >
+          {loading === "generate" ? "Generating…" : "✨ Generate with AI"}
+        </button>
 
         {authed ? (
-          <button
-            onClick={postToLinkedIn}
-            disabled={!post || overLimit || loading === "post"}
-            className="rounded-xl border px-4 py-2 text-gray-800 
-                      hover:bg-black hover:text-white 
-                      disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-800"
-            title="Publish this text to your LinkedIn feed"
-          >
-            {loading === "post" ? "Posting…" : "Post to LinkedIn"}
-          </button>
+          <>
+            <button
+              onClick={postToLinkedIn}
+              disabled={!post || loading === "post"}
+              className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800 disabled:opacity-40"
+            >
+              {loading === "post" ? "Posting…" : "Post to LinkedIn"}
+            </button>
+            <button
+              onClick={() => signOut({ callbackUrl: "/" })}
+              className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-gray-100"
+            >
+              Logout
+            </button>
+          </>
         ) : (
           <button
             onClick={handleLinkedInLogin}
-            className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-black hover:text-white"
-            title="Authenticate with LinkedIn to enable posting"
+            disabled={loading === "check"}
+            className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-gray-100 disabled:opacity-40"
           >
-            Login with LinkedIn
+            {loading === "check" ? "Checking…" : "Login with LinkedIn"}
           </button>
         )}
-          <button
-            onClick={onSaveDraft}
-            className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
-            title="Save to this browser only"
-          >
-            Save draft
-          </button>
-          <button
-            onClick={onLoadDraft}
-            className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
-          >
-            Load draft
-          </button>
-          <button
-            onClick={onDeleteDraft}
-            className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
-          >
-            Delete draft
-          </button>
+      </div>
 
-          <button
-            onClick={onCopy}
-            disabled={!post}
-            className="rounded-xl border px-4 py-2 hover:bg-black hover:text-white text-gray-800"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-
-          <button
-            onClick={onClear}
-            className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800"
-          >
-            Clear
-          </button>
-        </div>
-
-        {error && (
-          <p className="mt-3 text-sm text-red-600">
-            {error}
-          </p>
-        )}
-      </section>
-
-      <section className="rounded-2xl border bg-white p-5 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Preview</h2>
-          <div className="text-sm">
-            <span className={overLimit ? "text-red-600" : "text-gray-500"}>
-              {count} / {LI_MAX}
-            </span>
-          </div>
-        </div>
-
-        <textarea
-          value={post}
-          onChange={(e) => setPost(e.target.value)}
-          rows={10}
-          className={`w-full resize-y rounded-lg border px-3 py-2 outline-none text-gray-800 focus:ring ${
-            overLimit ? "border-red-400" : ""
-          }`}
-          placeholder="Your generated post will appear here… (You can edit freely.)"
-        />
-
-        {overLimit && (
-          <p className="mt-3 text-sm text-red-600">
-            Your post exceeds LinkedIn’s ~3000 character limit. Trim a bit.
-          </p>
-        )}
-      </section>
+      {profile && (
+        <p className="text-sm text-gray-600">
+          ✅ Logged in as {profile.localizedFirstName}{" "}
+          {profile.localizedLastName}
+        </p>
+      )}
     </div>
   );
 }

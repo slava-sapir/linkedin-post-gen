@@ -103,7 +103,7 @@ export default function PostComposer() {
         <button
           onClick={generateWithAI}
           disabled={loading === "generate"}
-          className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-gray-100 disabled:opacity-40"
+          className="rounded-xl border px-4 py-2 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40"
         >
           {loading === "generate" ? "Generating…" : "✨ Generate with AI"}
         </button>
@@ -113,13 +113,13 @@ export default function PostComposer() {
             <button
               onClick={postToLinkedIn}
               disabled={!post || loading === "post"}
-              className="rounded-xl border px-4 py-2 enabled:hover:bg-black hover:text-white text-gray-800 disabled:opacity-40"
+              className="rounded-xl border px-4 py-2 enabled:hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40"
             >
               {loading === "post" ? "Posting…" : "Post to LinkedIn"}
             </button>
             <button
               onClick={() => signOut({ callbackUrl: "/" })}
-              className="rounded-xl border px-4 py-2 text-gray-800 hover:bg-gray-100"
+              className="rounded-xl border px-4 py-2 hover:bg-gray-100 hover:text-gray-800"
             >
               Logout
             </button>

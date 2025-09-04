@@ -30,7 +30,7 @@ export default function HomePage() {
   return (
     <div className="grid gap-6">
       <h1 className="text-2xl font-bold">Draft your LinkedIn post</h1>
-      <p className="text-sm text-gray-600">
+      <p className="text-sm">
         Use the composer below to draft and publish directly to LinkedIn.
       </p>
       <PostComposer />
